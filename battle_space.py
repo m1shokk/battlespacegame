@@ -3,6 +3,7 @@ import sys
 import random
 import time
 import json
+import math
 
 # Initialisation de Pygame
 pygame.init()
@@ -17,7 +18,15 @@ pygame.display.set_caption("Battle Space")
 
 # Charger l'image de fond
 background_image = pygame.image.load("./images/fond.jpg")
+asteroid_background = pygame.image.load("./images/asteroid.jpg")
+extra_background = pygame.image.load("./images/extra.jpg")
 background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+asteroid_background = pygame.transform.scale(asteroid_background, (screen_width, screen_height))
+extra_background = pygame.transform.scale(extra_background, (screen_width, screen_height))
+
+backgrounds = [background_image, asteroid_background, extra_background]
+current_background = backgrounds[0]
+level = 1
 
 # Charger l'image du personnage
 spaceship_image = pygame.image.load("./images/spaceship.png")
@@ -54,6 +63,10 @@ boss_last_shot = 0
 boss_shot_delay = 2000  # 2 secondes
 boss_projectiles = []
 enemies_killed = 0
+boss_direction = 1  # 1 pour droite, -1 pour gauche
+boss_speed = 0.3
+boss_vertical_speed = 0.1
+boss_max_y = 200  # Position Y maximale du boss
 
 # Position initiale du personnage
 initial_x = (screen_width - new_width) // 2
@@ -77,17 +90,25 @@ except:
 # Police pour le texte
 font = pygame.font.Font(None, 36)
 
-# Vies du joueur
+# Vies du joueur et mode GOD
 player_lives = 3
+god_mode = False
+god_code = ""
 
 # Vitesse de déplacement du vaisseau
-speed = 0.6
+base_speed = 0.6
+speed = base_speed
 projectile_speed = 0.8
 head_speed = 0.3
 head_speed_fast = 0.5  # Vitesse pour le head rapide
 
+# Variables pour les niveaux
+spawn_speed_bonus = 0
+mob_speed_bonus = 0
+player_speed_bonus = 0
+
 def show_game_over_screen():
-    global score, high_score, running, boss_active, enemies_killed, boss_health
+    global score, high_score, running, boss_active, enemies_killed, boss_health, level, current_background, spawn_speed_bonus, mob_speed_bonus, player_speed_bonus, speed
     
     if score > high_score:
         high_score = score
@@ -119,6 +140,12 @@ def show_game_over_screen():
                 enemies_killed = 0
                 boss_health = 50
                 boss_projectiles.clear()
+                level = 1
+                current_background = backgrounds[0]
+                spawn_speed_bonus = 0
+                mob_speed_bonus = 0
+                player_speed_bonus = 0
+                speed = base_speed
                 return True
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -136,7 +163,7 @@ while running:
     current_time = pygame.time.get_ticks()
     
     # Gestion du spawn des ennemis
-    spawn_delay = 10000 if boss_active else 1000  # 10 secondes si boss actif, 1 seconde sinon
+    spawn_delay = 10000 if boss_active else max(100, 1000 - (spawn_speed_bonus * 300))
     
     if current_time - last_spawn_time > spawn_delay and not boss_active:
         # 30% de chance d'avoir un head avec défense, 20% pour un head rapide
@@ -153,10 +180,32 @@ while running:
         heads.append([random.randint(0, screen_width - 80), -80, head_type, health])
         last_spawn_time = current_time
 
-    # Gestion des tirs du boss
-    if boss_active and current_time - boss_last_shot > boss_shot_delay:
-        boss_projectiles.append([boss_x + 120 - 20, boss_y + 240])
-        boss_last_shot = current_time
+    # Gestion des tirs du boss et de son mouvement
+    if boss_active:
+        # Mouvement horizontal
+        boss_x += boss_speed * boss_direction
+        if boss_x <= 0 or boss_x >= screen_width - 240:
+            boss_direction *= -1
+            
+        # Mouvement vertical (suivre le joueur)
+        if boss_y < boss_max_y:
+            boss_y += boss_vertical_speed
+            
+        # Tir
+        if current_time - boss_last_shot > boss_shot_delay:
+            # Calculer la direction vers le joueur
+            dx = spaceship_x - boss_x
+            dy = spaceship_y - boss_y
+            angle = math.atan2(dy, dx)
+            
+            # Créer le projectile avec une direction
+            boss_projectiles.append([
+                boss_x + 120 - 20,
+                boss_y + 240,
+                math.cos(angle) * projectile_speed,
+                math.sin(angle) * projectile_speed
+            ])
+            boss_last_shot = current_time
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -165,6 +214,14 @@ while running:
             if event.key == pygame.K_SPACE:
                 spaceship_x = initial_x
                 spaceship_y = initial_y
+            # Code GOD
+            if event.key in [pygame.K_g, pygame.K_o, pygame.K_d]:
+                god_code += event.unicode.upper()
+                if len(god_code) > 3:
+                    god_code = god_code[1:]
+                if god_code == "GOD":
+                    god_mode = True
+                    player_lives = float('inf')
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 projectiles.append([spaceship_x + new_width//2 - 20, spaceship_y - 35])
@@ -195,6 +252,14 @@ while running:
                 if boss_health <= 0:
                     boss_active = False
                     score += 5000
+                    level += 1
+                    spawn_speed_bonus += 0.3
+                    mob_speed_bonus += 0.1
+                    player_speed_bonus += 0.2
+                    speed = base_speed + player_speed_bonus
+                    boss_health = int(50 * (1.5 ** (level - 1)))
+                    enemies_killed = 0
+                    current_background = backgrounds[level % len(backgrounds)]
                 projectiles.remove(projectile)
                 continue
         
@@ -219,8 +284,14 @@ while running:
 
     # Gestion des projectiles du boss
     for projectile in boss_projectiles[:]:
-        projectile[1] += projectile_speed
-        if projectile[1] > screen_height:
+        if len(projectile) == 4:  # Nouveau format avec direction
+            projectile[0] += projectile[2]  # Déplacement X
+            projectile[1] += projectile[3]  # Déplacement Y
+        else:  # Ancien format (vers le bas)
+            projectile[1] += projectile_speed
+            
+        if (projectile[1] > screen_height or projectile[1] < 0 or 
+            projectile[0] > screen_width or projectile[0] < 0):
             boss_projectiles.remove(projectile)
             continue
         
@@ -228,71 +299,88 @@ while running:
         spaceship_rect = pygame.Rect(spaceship_x, spaceship_y, new_width, new_height)
         if projectile_rect.colliderect(spaceship_rect):
             boss_projectiles.remove(projectile)
-            player_lives -= 1
-            if player_lives <= 0:
-                if show_game_over_screen():
-                    player_lives = 3
-                    score = 0
-                    heads.clear()
-                    projectiles.clear()
-                    explosions.clear()
-                    boss_projectiles.clear()
-                    spaceship_x = initial_x
-                    spaceship_y = initial_y
-                    boss_active = False
-                    enemies_killed = 0
-                    boss_health = 50
-                else:
-                    running = False
+            if not god_mode:
+                player_lives -= 1
+                if player_lives <= 0:
+                    if show_game_over_screen():
+                        player_lives = 3
+                        score = 0
+                        heads.clear()
+                        projectiles.clear()
+                        explosions.clear()
+                        boss_projectiles.clear()
+                        spaceship_x = initial_x
+                        spaceship_y = initial_y
+                        boss_active = False
+                        enemies_killed = 0
+                        boss_health = 50
+                        god_mode = False
+                        level = 1
+                        current_background = backgrounds[0]
+                        spawn_speed_bonus = 0
+                        mob_speed_bonus = 0
+                        player_speed_bonus = 0
+                        speed = base_speed
+                    else:
+                        running = False
 
     # Activation du boss
-    if enemies_killed >= 50 and not boss_active:
+    if enemies_killed >= 30 and not boss_active:
         boss_active = True
-        boss_health = 50
         heads.clear()
+        boss_x = (screen_width - 240) // 2
+        boss_y = 50
     
     for head in heads[:]:
         # Utilise la vitesse rapide pour le type 2 (speed)
-        current_speed = head_speed_fast if head[2] == 2 else head_speed
+        current_speed = (head_speed_fast if head[2] == 2 else head_speed) + mob_speed_bonus
         head[1] += current_speed
         if head[1] > screen_height:
             heads.remove(head)
-            player_lives -= 1
-            if player_lives <= 0:
-                if show_game_over_screen():
-                    player_lives = 3
-                    score = 0
-                    heads.clear()
-                    projectiles.clear()
-                    explosions.clear()
-                    boss_projectiles.clear()
-                    spaceship_x = initial_x
-                    spaceship_y = initial_y
-                    boss_active = False
-                    enemies_killed = 0
-                    boss_health = 50
-                else:
-                    running = False
+            if not god_mode:
+                player_lives -= 1
+                if player_lives <= 0:
+                    if show_game_over_screen():
+                        player_lives = 3
+                        score = 0
+                        heads.clear()
+                        projectiles.clear()
+                        explosions.clear()
+                        boss_projectiles.clear()
+                        spaceship_x = initial_x
+                        spaceship_y = initial_y
+                        boss_active = False
+                        enemies_killed = 0
+                        boss_health = 50
+                        god_mode = False
+                        level = 1
+                        current_background = backgrounds[0]
+                        spawn_speed_bonus = 0
+                        mob_speed_bonus = 0
+                        player_speed_bonus = 0
+                        speed = base_speed
+                    else:
+                        running = False
 
     for explosion in explosions[:]:
         if current_time - explosion[2] > 2000:
             explosions.remove(explosion)
 
-    screen.blit(background_image, (0, 0))
+    screen.blit(current_background, (0, 0))
     screen.blit(spaceship_image, (spaceship_x, spaceship_y))
 
     # Affichage du boss et de sa barre de vie
     if boss_active:
         screen.blit(boss_image, (boss_x, boss_y))
         pygame.draw.rect(screen, (255, 0, 0), (50, 20, 700, 20))
-        pygame.draw.rect(screen, (0, 255, 0), (50, 20, (boss_health/50)*700, 20))
+        pygame.draw.rect(screen, (0, 255, 0), (50, 20, (boss_health/(50 * (1.5 ** (level - 1))))*700, 20))
         
         for projectile in boss_projectiles:
             screen.blit(boom_image, (projectile[0], projectile[1]))
     
     # Message d'avertissement pour l'arrivée du boss
-    if enemies_killed >= 41 and enemies_killed < 50 and not boss_active:
-        warning_text = font.render(f"Boss dans {50 - enemies_killed} ennemis!", True, (255, 0, 0))
+    if enemies_killed >= 21 and enemies_killed < 30 and not boss_active:
+        warning_text = font.render(f"Boss dans {30 - enemies_killed} ennemis!", True, (255, 0, 0))
         screen.blit(warning_text, (screen_width//2 - warning_text.get_width()//2, 20))
 
     for projectile in projectiles:
@@ -313,14 +401,19 @@ while running:
     for i in range(3):
         heart_x = screen_width - 40 * (3-i)
         heart_y = screen_height - 40
-        if i < player_lives:
+        if god_mode or i < player_lives:
             screen.blit(heart_image, (heart_x, heart_y))
         else:
             screen.blit(heart_off_image, (heart_x, heart_y))
 
-    # Afficher le score
+    # Afficher le score, le mode GOD et le niveau
     score_text = font.render(f"Score: {score}", True, (255, 255, 255))
+    level_text = font.render(f"Niveau: {level}", True, (255, 255, 255))
     screen.blit(score_text, (10, screen_height - 40))
+    screen.blit(level_text, (10, screen_height - 80))
+    if god_mode:
+        god_text = font.render("MODE GOD ACTIVÉ", True, (255, 215, 0))
+        screen.blit(god_text, (screen_width//2 - god_text.get_width()//2, screen_height - 40))
 
     pygame.display.flip()
 
