@@ -28,7 +28,7 @@ backgrounds = [background_image, asteroid_background, extra_background]
 current_background = backgrounds[0]
 level = 1
 
-# Charger l'image du personnage
+# Charger l'image du personnage et des bonus
 spaceship_image = pygame.image.load("./images/spaceship.png")
 boom_image = pygame.image.load("./images/boom.png")
 head_image = pygame.image.load("./images/head.png")
@@ -37,6 +37,8 @@ head_speed_image = pygame.image.load("./images/head_speed.png")
 explosion_image = pygame.image.load("./images/explosion.png")
 heart_image = pygame.image.load("./images/coeur.png")
 heart_off_image = pygame.image.load("./images/coeur_off.png")
+snow_image = pygame.image.load("./images/neige.png") 
+laser_image = pygame.image.load("./images/laser.png")
 
 # Redimensionner le personnage à 20 % de sa taille d'origine
 original_width, original_height = spaceship_image.get_size()
@@ -44,7 +46,7 @@ new_width = int(original_width * 0.2)
 new_height = int(original_height * 0.2)
 spaceship_image = pygame.transform.scale(spaceship_image, (new_width, new_height))
 
-# Redimensionner le projectile et le head
+# Redimensionner le projectile, le head et les bonus
 boom_image = pygame.transform.scale(boom_image, (40, 50))
 head_image = pygame.transform.scale(head_image, (80, 80))
 head_def_image = pygame.transform.scale(head_def_image, (80, 80))
@@ -52,6 +54,8 @@ head_speed_image = pygame.transform.scale(head_speed_image, (80, 80))
 explosion_image = pygame.transform.scale(explosion_image, (80, 80))
 heart_image = pygame.transform.scale(heart_image, (30, 30))
 heart_off_image = pygame.transform.scale(heart_off_image, (30, 30))
+snow_image = pygame.transform.scale(snow_image, (40, 40))
+laser_image = pygame.transform.scale(laser_image, (40, 40))
 
 # Boss
 boss_image = pygame.transform.scale(head_image, (240, 240))
@@ -74,10 +78,21 @@ initial_y = screen_height - new_height - 50
 spaceship_x = initial_x
 spaceship_y = initial_y
 
-# Liste pour stocker les projectiles, les heads et les explosions
+# Liste pour stocker les projectiles, les heads, les explosions et les bonus
 projectiles = []
 heads = []  # [x, y, type, health] - type: 0 normal, 1 defense, 2 speed
 explosions = []
+bonuses = []  # [x, y, type, spawn_time] - type: 0 coeur, 1 neige, 2 laser
+
+# Variables pour les bonus
+bonus_speed = 0.3
+heart_spawn_time = 0
+snow_spawn_time = 0
+laser_spawn_time = 0
+snow_active = False
+snow_end_time = 0
+laser_active = False
+laser_end_time = 0
 
 # Score et meilleur score
 score = 0
@@ -89,6 +104,7 @@ except:
 
 # Police pour le texte
 font = pygame.font.Font(None, 36)
+small_font = pygame.font.Font(None, 24)
 
 # Vies du joueur et mode GOD
 player_lives = 3
@@ -162,6 +178,29 @@ running = True
 while running:
     current_time = pygame.time.get_ticks()
     
+    # Gestion des bonus
+    if current_time - heart_spawn_time > random.randint(10000, 30000):
+        bonuses.append([random.randint(0, screen_width - 40), -40, 0, current_time])
+        heart_spawn_time = current_time
+        
+    if current_time - snow_spawn_time > random.randint(5000, 15000):
+        bonuses.append([random.randint(0, screen_width - 40), -40, 1, current_time])
+        snow_spawn_time = current_time
+        
+    if current_time - laser_spawn_time > random.randint(8000, 45000):
+        bonuses.append([random.randint(0, screen_width - 40), -40, 2, current_time])
+        laser_spawn_time = current_time
+    
+    # Vérification de la fin des effets des bonus
+    if snow_active and current_time > snow_end_time:
+        snow_active = False
+        speed = base_speed + player_speed_bonus
+        head_speed = 0.3
+        head_speed_fast = 0.5
+        
+    if laser_active and current_time > laser_end_time:
+        laser_active = False
+    
     # Gestion du spawn des ennemis
     spawn_delay = 10000 if boss_active else max(100, 1000 - (spawn_speed_bonus * 300))
     
@@ -224,22 +263,52 @@ while running:
                     player_lives = float('inf')
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                projectiles.append([spaceship_x + new_width//2 - 20, spaceship_y - 35])
+                if laser_active:
+                    projectiles.append([spaceship_x + new_width//2 - 20, spaceship_y - 35, 0])  # Tir droit
+                    projectiles.append([spaceship_x + new_width//2 - 20, spaceship_y - 35, -0.5])  # Tir gauche
+                    projectiles.append([spaceship_x + new_width//2 - 20, spaceship_y - 35, 0.5])  # Tir droit
+                else:
+                    projectiles.append([spaceship_x + new_width//2 - 20, spaceship_y - 35, 0])
 
     keys = pygame.key.get_pressed()
+    current_speed = speed * (0.5 if snow_active else 1)
     if (keys[pygame.K_LEFT] or keys[pygame.K_a]) and spaceship_x > 0:
-        spaceship_x -= speed
+        spaceship_x -= current_speed
     if (keys[pygame.K_RIGHT] or keys[pygame.K_d]) and spaceship_x < screen_width - new_width:
-        spaceship_x += speed
+        spaceship_x += current_speed
     if (keys[pygame.K_UP] or keys[pygame.K_w]) and spaceship_y > 0:
-        spaceship_y -= speed
+        spaceship_y -= current_speed
     if (keys[pygame.K_DOWN] or keys[pygame.K_s]) and spaceship_y < screen_height - new_height:
-        spaceship_y += speed
+        spaceship_y += current_speed
+
+    # Gestion des bonus
+    for bonus in bonuses[:]:
+        bonus[1] += bonus_speed
+        if bonus[1] > screen_height:
+            bonuses.remove(bonus)
+            continue
+            
+        bonus_rect = pygame.Rect(bonus[0], bonus[1], 40, 40)
+        spaceship_rect = pygame.Rect(spaceship_x, spaceship_y, new_width, new_height)
+        
+        if bonus_rect.colliderect(spaceship_rect):
+            if bonus[2] == 0:  # Coeur
+                if player_lives < 3:
+                    player_lives += 1
+            elif bonus[2] == 1:  # Neige
+                snow_active = True
+                snow_end_time = current_time + 5000
+            elif bonus[2] == 2:  # Laser
+                laser_active = True
+                laser_end_time = current_time + 8000
+            bonuses.remove(bonus)
 
     # Gestion des projectiles du joueur
     for projectile in projectiles[:]:
         projectile[1] -= projectile_speed
-        if projectile[1] < -50:
+        if len(projectile) > 2:  # Si le projectile a une direction horizontale
+            projectile[0] += projectile_speed * projectile[2]
+        if projectile[1] < -50 or projectile[0] < -50 or projectile[0] > screen_width:
             projectiles.remove(projectile)
             continue
         
@@ -309,6 +378,7 @@ while running:
                         projectiles.clear()
                         explosions.clear()
                         boss_projectiles.clear()
+                        bonuses.clear()
                         spaceship_x = initial_x
                         spaceship_y = initial_y
                         boss_active = False
@@ -321,6 +391,8 @@ while running:
                         mob_speed_bonus = 0
                         player_speed_bonus = 0
                         speed = base_speed
+                        snow_active = False
+                        laser_active = False
                     else:
                         running = False
 
@@ -333,8 +405,8 @@ while running:
     
     for head in heads[:]:
         # Utilise la vitesse rapide pour le type 2 (speed)
-        current_speed = (head_speed_fast if head[2] == 2 else head_speed) + mob_speed_bonus
-        head[1] += current_speed
+        current_head_speed = ((head_speed_fast if head[2] == 2 else head_speed) + mob_speed_bonus) * (0.5 if snow_active else 1)
+        head[1] += current_head_speed
         if head[1] > screen_height:
             heads.remove(head)
             if not god_mode:
@@ -347,6 +419,7 @@ while running:
                         projectiles.clear()
                         explosions.clear()
                         boss_projectiles.clear()
+                        bonuses.clear()
                         spaceship_x = initial_x
                         spaceship_y = initial_y
                         boss_active = False
@@ -359,6 +432,8 @@ while running:
                         mob_speed_bonus = 0
                         player_speed_bonus = 0
                         speed = base_speed
+                        snow_active = False
+                        laser_active = False
                     else:
                         running = False
 
@@ -383,6 +458,19 @@ while running:
         warning_text = font.render(f"Boss dans {30 - enemies_killed} ennemis!", True, (255, 0, 0))
         screen.blit(warning_text, (screen_width//2 - warning_text.get_width()//2, 20))
 
+    # Affichage des bonus actifs et leurs timers
+    if snow_active:
+        remaining_time = (snow_end_time - current_time) // 1000
+        timer_text = small_font.render(f"Neige: {remaining_time}s", True, (255, 255, 255))
+        screen.blit(snow_image, (10, 10))
+        screen.blit(timer_text, (60, 20))
+        
+    if laser_active:
+        remaining_time = (laser_end_time - current_time) // 1000
+        timer_text = small_font.render(f"Laser: {remaining_time}s", True, (255, 255, 255))
+        screen.blit(laser_image, (10, 60))
+        screen.blit(timer_text, (60, 70))
+
     for projectile in projectiles:
         screen.blit(boom_image, (projectile[0], projectile[1]))
 
@@ -396,6 +484,14 @@ while running:
 
     for explosion in explosions:
         screen.blit(explosion_image, (explosion[0], explosion[1]))
+
+    for bonus in bonuses:
+        if bonus[2] == 0:  # Coeur
+            screen.blit(heart_image, (bonus[0], bonus[1]))
+        elif bonus[2] == 1:  # Neige
+            screen.blit(snow_image, (bonus[0], bonus[1]))
+        elif bonus[2] == 2:  # Laser
+            screen.blit(laser_image, (bonus[0], bonus[1]))
 
     # Afficher les coeurs
     for i in range(3):
