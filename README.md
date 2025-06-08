@@ -26,6 +26,9 @@
 - `fond.jpg`, `asteroid.jpg`, `extra.jpg` — level backgrounds
 
 ## Screenshots
-- Gameplay: "Place for screenshot"
-- Boss fight: "Place for screenshot"
-- Collecting a bonus: "Place for screenshot" 
+- Gameplay: ![image](https://github.com/user-attachments/assets/b2c072ec-8d53-44de-9ca4-951553d54f51)
+
+- Boss fight: ![image](https://github.com/user-attachments/assets/cecd4314-f8e8-4e72-a3de-08adb6f88f43)
+
+- Collecting a bonus: ![image](https://github.com/user-attachments/assets/ed12599d-51a3-45d2-aeea-d201a141a0fe)
+
