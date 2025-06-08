@@ -30,5 +30,6 @@
 
 - Boss fight: ![image](https://github.com/user-attachments/assets/cecd4314-f8e8-4e72-a3de-08adb6f88f43)
 
-- Collecting a bonus: ![image](https://github.com/user-attachments/assets/ed12599d-51a3-45d2-aeea-d201a141a0fe)
+- Collecting a bonus: ![image](https://github.com/user-attachments/assets/13b12801-3a5c-4cbd-b79f-de4fc5490b41)
+
 
